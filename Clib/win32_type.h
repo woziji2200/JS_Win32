@@ -4,6 +4,7 @@
 #include "../quickjs.h"
 #define Type_Window 0
 #define Type_Button 1
+#define Type_Text 2
 typedef struct Win32_Window{
     int type;
     HWND hwnd;              // 窗口句柄
@@ -13,6 +14,7 @@ typedef struct Win32_Window{
     const char *ClassName;  // 窗口类名
     int X;                  // 窗口X坐标 
     int Y;                  // 窗口Y坐标
+    int ID;
 } Win32_Window;
 
 typedef struct Win32_Button{
@@ -25,8 +27,31 @@ typedef struct Win32_Button{
     const char *ClassName;
     int X;
     int Y;
+    int ID;
+    int ParentID;
     JSValue OnClick;
 } Win32_Button;
+
+typedef struct Win32_Core{
+    int ID;
+} Win32_Core;
+
+typedef struct Win32_Text{
+    int type;
+    HWND hwnd;
+    HWND parent;
+    int Width;
+    int Height;
+    const char *Text;
+    const char *ClassName;
+    int X;
+    int Y;
+    int ID;
+    int ParentID;
+    JSValue OnClick;
+} Win32_Text;
+
+
 
 // struct Win32_Component{
 //     void** component;

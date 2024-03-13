@@ -1,4 +1,5 @@
 #include <Windows.h>
+
 #include "../quickjs.h"
 #include "win32_type.h"
 #define countof(x) \
@@ -42,6 +43,8 @@ static JSValue win32_window_ctor(JSContext *ctx, JSValueConst new_target,
     proto = JS_GetPropertyStr(ctx, new_target, "prototype");
     if (JS_IsException(proto)) goto fail;
     ww->type = Type_Window;
+    if (JS_ToInt32(ctx, &ww->ID,  argv[4]))
+        goto fail;
     obj = JS_NewObjectProtoClass(ctx, proto, win32_window_class_id);
     JS_FreeValue(ctx, proto);
     if (JS_IsException(obj)) goto fail;
@@ -86,6 +89,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
                         JS_FreeValue(_ctx, ret);
                     }
                 }
+                if(*type == Type_Text){
+                    Win32_Text *text = Win32_Component[i];
+                    if ((HWND)lParam == text->hwnd) {
+                        // 调用按钮点击事件处理函数
+                        JSValue ret = JS_Call(_ctx, text->OnClick,
+                                              JS_UNDEFINED, 0, NULL);
+                        if (JS_IsException(ret)) {
+                            JSValue e = JS_GetException(_ctx);
+                            JS_FreeValue(_ctx, e);
+                        }
+                        JS_FreeValue(_ctx, ret);
+                    }
+                }
             }
             // if (LOWORD(wParam) == BUTTON_ID && HIWORD(wParam) == BN_CLICKED)
             // {
@@ -120,12 +136,29 @@ static JSValue win32_window_create_window(JSContext *ctx, JSValueConst this_val,
         int *type = (int *)(Win32_Component[i]);
         if (*type == Type_Button) {
             Win32_Button *button = Win32_Component[i];
-            button->hwnd = CreateWindowEx(
-                0, "BUTTON", button->Text,
-                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, button->X, button->Y,
-                button->Width, button->Height, ww->hwnd, NULL, NULL, NULL);
-            if (!button->hwnd) return JS_EXCEPTION;
-            button->parent = ww->hwnd;
+            // char buffer[100];
+            // sprintf(buffer, "button%d, parent%d, ww%d", button->ID, button->ParentID, ww->ID);
+            // MessageBoxA(NULL, buffer, "test", MB_OK);
+            if (button->ParentID == ww->ID) {
+                button->hwnd = CreateWindowEx(
+                    0, button->ClassName, button->Text,
+                    WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, button->X, button->Y,
+                    button->Width, button->Height, ww->hwnd, NULL, NULL, NULL);
+                if (!button->hwnd) return JS_EXCEPTION;
+                button->parent = ww->hwnd;
+            }
+        }
+        if (*type == Type_Text) {
+            Win32_Text *text = Win32_Component[i];
+            if (text->ParentID == ww->ID) {
+                text->hwnd = CreateWindowEx(
+                    0, text->ClassName, text->Text,
+                    WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL,
+                    text->X, text->Y, text->Width, text->Height, ww->hwnd, NULL,
+                    NULL, NULL);
+                if (!text->hwnd) return JS_EXCEPTION;
+                text->parent = ww->hwnd;
+            }
         }
     }
 
@@ -268,16 +301,17 @@ static JSValue win32_window_set_y(JSContext *ctx, JSValueConst this_val,
     Win32_Window *ww = JS_GetOpaque2(ctx, this_val, win32_window_class_id);
     if (!ww) return JS_EXCEPTION;
     if (JS_ToInt32(ctx, &ww->Y, val)) return JS_EXCEPTION;
-         RECT rect;
+    RECT rect;
     GetWindowRect(ww->hwnd, &rect);
-    SetWindowPos(ww->hwnd, HWND_TOP,rect.left, ww->Y, 0, 0,
+    SetWindowPos(ww->hwnd, HWND_TOP, rect.left, ww->Y, 0, 0,
                  SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     return JS_UNDEFINED;
 }
-static JSValue win32_window_get_HWND(JSContext *ctx, JSValueConst this_val) {
+static JSValue win32_window_get_HWND(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv) {
     Win32_Button *ww = JS_GetOpaque2(ctx, this_val, win32_window_class_id);
     if (!ww) return JS_EXCEPTION;
-    return JS_NewInt64(ctx, (int)(int *)ww->hwnd);
+    return JS_NewInt64(ctx, (long long)(void *)ww->hwnd);
 }
 
 static const JSCFunctionListEntry win32_window_proto_funcs[] = {

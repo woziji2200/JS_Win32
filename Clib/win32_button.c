@@ -39,6 +39,11 @@ static JSValue win32_window_ctor(JSContext *ctx, JSValueConst new_target,
         goto fail;
     if (JS_ToInt32(ctx, &ww->Height, JS_GetPropertyStr(ctx, argv[0], "Height")))
         goto fail;
+    if (JS_ToInt32(ctx, &ww->ID, JS_GetPropertyStr(ctx, argv[0], "ID")))
+        goto fail;
+    if (JS_ToInt32(ctx, &ww->ParentID,
+                   JS_GetPropertyStr(ctx, argv[0], "ParentID")))
+        goto fail;
     ww->OnClick = JS_GetPropertyStr(ctx, argv[0], "OnClick");
     JS_FreeValue(ctx, ww->OnClick);
     ww->type = Type_Button;
@@ -197,19 +202,21 @@ static JSValue win32_window_set_y(JSContext *ctx, JSValueConst this_val,
 
     // 将坐标转换为相对于父窗口的坐标系
     HWND hParentWnd = ww->parent;
-    POINT pt = { rect.left, rect.top };
+    POINT pt = {rect.left, rect.top};
     ScreenToClient(hParentWnd, &pt);
     // 计算新的坐标
     int newX = pt.x;
     // 调用 SetWindowPos 函数设置新的位置
     int newY;
     if (JS_ToInt32(ctx, &newY, val)) return JS_EXCEPTION;
-    SetWindowPos(ww->hwnd, NULL, newX, newY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);    return JS_UNDEFINED;
+    SetWindowPos(ww->hwnd, NULL, newX, newY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    return JS_UNDEFINED;
 }
-static JSValue win32_window_get_HWND(JSContext *ctx, JSValueConst this_val) {
+static JSValue win32_window_get_HWND(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv) {
     Win32_Button *ww = JS_GetOpaque2(ctx, this_val, win32_window_class_id);
     if (!ww) return JS_EXCEPTION;
-    return JS_NewInt64(ctx, (int)(int *)ww->hwnd);
+    return JS_NewInt64(ctx, (long long)(void *)ww->hwnd);
 }
 
 static const JSCFunctionListEntry win32_window_proto_funcs[] = {
