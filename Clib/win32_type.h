@@ -14,7 +14,10 @@ typedef struct Win32_Window{
     const char *ClassName;  // 窗口类名
     int X;                  // 窗口X坐标 
     int Y;                  // 窗口Y坐标
-    int ID;
+    int ID;                // 窗口ID
+    JSValue OnClose;        // 窗口关闭事件
+    JSValue OnDestroy;      // 窗口销毁事件
+    JSValue OnCreate;       // 窗口创建事件
 } Win32_Window;
 
 typedef struct Win32_Button{

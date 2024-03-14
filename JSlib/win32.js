@@ -4,7 +4,8 @@ import { Win32_Core } from './win32_core.so'
 import { Win32_Text } from './win32_text.so'
 
 const EMPTY_FUNCTION = function () { };
-
+const EMPTY_FUNCTION_RET1 = function () { return true; };
+let WindowIDMap = {}
 export class JS_Win32_Window {
     /**
      * @typedef {Object} window_params 窗口参数
@@ -13,6 +14,9 @@ export class JS_Win32_Window {
      * @property {string} [Text] 窗口标题
      * @property {number} [ClassName] 窗口类名
      * @property {number} [ID] 窗口ID
+     * @property {function} [OnClose] 关闭事件，返回值为false时将不会关闭窗口
+     * @property {function} [OnDestory] 销毁事件
+     * @property {function} [OnCreate] 创建事件
      */
 
     /**
@@ -20,13 +24,17 @@ export class JS_Win32_Window {
      * @param {window_params} params 窗口参数
      */
     constructor(params) {
-        this.window = new Win32_Window(
-            params.Width || 800, // 窗口宽度
-            params.Height || 600,// 窗口高度
-            params.Text || "Window", // 窗口标题
-            params.ClassName || "WindowClass", // 窗口类名
-            params.ID || 0 // 窗口ID
-        );
+        WindowIDMap[params.ID] = Object.keys(WindowIDMap).length + 1;
+        this.window = new Win32_Window({
+            Width: params.Width || 800, // 窗口宽度
+            Height: params.Height || 600,// 窗口高度
+            Text: params.Text || "Window", // 窗口标题
+            ClassName: params.ClassName || "WindowClass", // 窗口类名
+            ID: WindowIDMap[params.ID] || 0, // 窗口ID
+            OnClose: params.OnClose || EMPTY_FUNCTION_RET1, // 关闭事件
+            OnDestory: params.OnDestory || EMPTY_FUNCTION, // 销毁事件
+            OnCreate: params.OnCreate || EMPTY_FUNCTION, // 创建事件
+        });
     }
     /**
      * 开始创建窗口，应该在所有组件创建完成后调用
@@ -35,6 +43,7 @@ export class JS_Win32_Window {
         this.window.CreateWindow();
     }
     GetHWND() { return this.window.GetHWND(); }
+    // test() { this.window.test(); }
     get Width() { return this.window.Width; }
     set Width(value) { this.window.Width = value; }
     get Height() { return this.window.Height; }
@@ -75,7 +84,7 @@ export class JS_Win32_Button {
             OnClick: params.OnClick || EMPTY_FUNCTION, // OnClick
             ClassName: params.ClassName || "BUTTON", // ClassName
             ID: params.ID || 0,
-            ParentID: params.ParentID || 0,
+            ParentID: WindowIDMap[params.ParentID] || 0,
         });
 
     }
@@ -120,7 +129,7 @@ export class JS_Win32_Text {
             OnClick: params.OnClick || EMPTY_FUNCTION, // OnClick
             ClassName: params.ClassName || "STATIC", // ClassName
             ID: params.ID || 0,
-            ParentID: params.ParentID || 0,
+            ParentID: WindowIDMap[params.ParentID] || 0,
         });
 
     }
@@ -224,6 +233,33 @@ export const JS_Win32_Core = {
         MB_RIGHT: 524288,
         MB_RTLREADING: 1048576,
         MB_SERVICE_NOTIFICATION: 2097152
+    },
+    /**
+     * @typedef {Object} MessageBoxResult
+     * @property {number} OK 确定
+     * @property {number} CANCEL 取消
+     * @property {number} ABORT 中止
+     * @property {number} RETRY 重试
+     * @property {number} IGNORE 忽略
+     * @property {number} YES 是
+     * @property {number} NO 否
+     * @property {number} TRYAGAIN 重试
+     * @property {number} CONTINUE 继续
+     */
+    /**
+     * 消息框结果
+     * @type {MessageBoxResult}
+     */
+    MessageBoxResult: {
+        OK: 1,
+        CANCEL: 2,
+        ABORT: 3,
+        RETRY: 4,
+        IGNORE: 5,
+        YES: 6,
+        NO: 7,
+        TRYAGAIN: 10,
+        CONTINUE: 11
     }
 
 }

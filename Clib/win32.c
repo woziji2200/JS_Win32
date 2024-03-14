@@ -13,6 +13,9 @@ volatile LONG *Win32_Component_Num;
 static JSRuntime *_rt;
 static JSContext *_ctx;
 
+Win32_Window **ww_global = NULL;
+int ww_global_num = 0;
+
 static void win32_window_finalizer(JSRuntime *rt, JSValue val) {
     Win32_Window *ww = JS_GetOpaque(val, win32_window_class_id);
     // for (int i = 0; i < *Win32_Component_Num; i++) {
@@ -34,18 +37,33 @@ static JSValue win32_window_ctor(JSContext *ctx, JSValueConst new_target,
     ww = js_mallocz(ctx, sizeof(*ww));
     if (!ww) return JS_EXCEPTION;
 
-    if (JS_ToInt32(ctx, &ww->Width, argv[0])) goto fail;
-    if (JS_ToInt32(ctx, &ww->Height, argv[1])) goto fail;
-    ww->Text = JS_ToCString(ctx, argv[2]);
+    if (JS_ToInt32(ctx, &ww->Width, JS_GetPropertyStr(ctx, argv[0], "Width")))
+        goto fail;
+    if (JS_ToInt32(ctx, &ww->Height, JS_GetPropertyStr(ctx, argv[0], "Height")))
+        goto fail;
+    ww->Text = JS_ToCString(ctx, JS_GetPropertyStr(ctx, argv[0], "Text"));
     if (!ww->Text) goto fail;
-    ww->ClassName = JS_ToCString(ctx, argv[3]);
+    ww->ClassName =
+        JS_ToCString(ctx, JS_GetPropertyStr(ctx, argv[0], "ClassName"));
     if (!ww->ClassName) goto fail;
     proto = JS_GetPropertyStr(ctx, new_target, "prototype");
     if (JS_IsException(proto)) goto fail;
     ww->type = Type_Window;
-    if (JS_ToInt32(ctx, &ww->ID,  argv[4]))
+    if (JS_ToInt32(ctx, &ww->ID, JS_GetPropertyStr(ctx, argv[0], "ID")))
         goto fail;
+    ww->OnClose = JS_GetPropertyStr(ctx, argv[0], "OnClose");
+    ww->OnDestroy = JS_GetPropertyStr(ctx, argv[0], "OnDestroy");
+    ww->OnCreate = JS_GetPropertyStr(ctx, argv[0], "OnCreate");
+    JS_FreeValue(ctx, ww->OnClose);
+    JS_FreeValue(ctx, ww->OnDestroy);
+    JS_FreeValue(ctx, ww->OnCreate);
+    // ww_global = ww;
+    ww_global = realloc(ww_global, sizeof(Win32_Window *)*(ww_global_num + 1));
+    ww_global[ww_global_num] = ww;
+    ww_global_num++;
+
     obj = JS_NewObjectProtoClass(ctx, proto, win32_window_class_id);
+
     JS_FreeValue(ctx, proto);
     if (JS_IsException(obj)) goto fail;
     JS_SetOpaque(obj, ww);
@@ -59,12 +77,42 @@ fail:
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
                             LPARAM lParam) {
     switch (uMsg) {
-        case WM_CLOSE:  // 处理窗口关闭事件
+        case WM_CREATE: {
+            // for (int i = 0; i < ww_global_num; i++) {
+
+            //     if (ww_global[i]->hwnd == hwnd) {
+            //         // JSValue ret = JS_Call(_ctx, ww_global[i]->OnCreate,
+            //         //                       JS_UNDEFINED, 0, NULL);
+            //         // return 0;
+            //         MessageBoxA(NULL, "create", "test", MB_OK);
+            //     }
+            // }
+            return 0;
+        }
+        case WM_CLOSE: {
+            for (int i = 0; i < ww_global_num; i++) {
+                if (ww_global[i]->hwnd == hwnd) {
+                    JSValue ret = JS_Call(_ctx, ww_global[i]->OnClose,
+                                          JS_UNDEFINED, 0, NULL);
+                    if (JS_ToBool(_ctx, ret) == 0) {
+                        return 0;
+                    }
+                }
+            }
             DestroyWindow(hwnd);
             break;
-        case WM_DESTROY:  // 处理销毁窗口事件
-            PostQuitMessage(0);
-            break;
+        }  // 处理窗口关闭事件
+        case WM_DESTROY: {
+            for (int i = 0; i < ww_global_num; i++) {
+                if (ww_global[i]->hwnd == hwnd) {
+                    JSValue ret = JS_Call(_ctx, ww_global[i]->OnDestroy,
+                                          JS_UNDEFINED, 0, NULL);
+                    PostQuitMessage(0);
+                    break;
+                }
+            }
+        }  // 处理销毁窗口事件
+
         case WM_PAINT:  // 处理绘制窗口事件
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
@@ -89,12 +137,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
                         JS_FreeValue(_ctx, ret);
                     }
                 }
-                if(*type == Type_Text){
+                if (*type == Type_Text) {
                     Win32_Text *text = Win32_Component[i];
                     if ((HWND)lParam == text->hwnd) {
                         // 调用按钮点击事件处理函数
-                        JSValue ret = JS_Call(_ctx, text->OnClick,
-                                              JS_UNDEFINED, 0, NULL);
+                        JSValue ret =
+                            JS_Call(_ctx, text->OnClick, JS_UNDEFINED, 0, NULL);
                         if (JS_IsException(ret)) {
                             JSValue e = JS_GetException(_ctx);
                             JS_FreeValue(_ctx, e);
@@ -120,7 +168,6 @@ static JSValue win32_window_create_window(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv) {
     Win32_Window *ww = JS_GetOpaque2(ctx, this_val, win32_window_class_id);
     if (!ww) return JS_EXCEPTION;
-
     WNDCLASS wc = {0};
     wc.lpfnWndProc = WindowProc;
     // wc.hInstance = hInstance;
@@ -137,8 +184,9 @@ static JSValue win32_window_create_window(JSContext *ctx, JSValueConst this_val,
         if (*type == Type_Button) {
             Win32_Button *button = Win32_Component[i];
             // char buffer[100];
-            // sprintf(buffer, "button%d, parent%d, ww%d", button->ID, button->ParentID, ww->ID);
-            // MessageBoxA(NULL, buffer, "test", MB_OK);
+            // sprintf(buffer, "button%d, parent%d, ww%d", button->ID,
+            // button->ParentID, ww->ID); MessageBoxA(NULL, buffer, "test",
+            // MB_OK);
             if (button->ParentID == ww->ID) {
                 button->hwnd = CreateWindowEx(
                     0, button->ClassName, button->Text,
@@ -151,11 +199,12 @@ static JSValue win32_window_create_window(JSContext *ctx, JSValueConst this_val,
         if (*type == Type_Text) {
             Win32_Text *text = Win32_Component[i];
             if (text->ParentID == ww->ID) {
-                text->hwnd = CreateWindowEx(
-                    0, text->ClassName, text->Text,
-                    WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL,
-                    text->X, text->Y, text->Width, text->Height, ww->hwnd, NULL,
-                    NULL, NULL);
+                text->hwnd =
+                    CreateWindowEx(0, text->ClassName, text->Text,
+                                   WS_CHILD | WS_VISIBLE | ES_LEFT |
+                                       ES_MULTILINE | ES_AUTOVSCROLL,
+                                   text->X, text->Y, text->Width, text->Height,
+                                   ww->hwnd, NULL, NULL, NULL);
                 if (!text->hwnd) return JS_EXCEPTION;
                 text->parent = ww->hwnd;
             }
@@ -308,11 +357,18 @@ static JSValue win32_window_set_y(JSContext *ctx, JSValueConst this_val,
     return JS_UNDEFINED;
 }
 static JSValue win32_window_get_HWND(JSContext *ctx, JSValueConst this_val,
-                             int argc, JSValueConst *argv) {
+                                     int argc, JSValueConst *argv) {
     Win32_Button *ww = JS_GetOpaque2(ctx, this_val, win32_window_class_id);
     if (!ww) return JS_EXCEPTION;
     return JS_NewInt64(ctx, (long long)(void *)ww->hwnd);
 }
+// static JSValue test(JSContext *ctx, JSValueConst this_val, int argc,
+//                     JSValueConst *argv) {
+//     Win32_Window *ww = JS_GetOpaque2(ctx, this_val, win32_window_class_id);
+//     if (!ww) return JS_EXCEPTION;
+//     JS_Call(ctx, ww->OnClose, JS_UNDEFINED, 0, NULL);
+//     return JS_UNDEFINED;
+// }
 
 static const JSCFunctionListEntry win32_window_proto_funcs[] = {
     // JS_CFUNC_DEF("testadd", 0, testadd),
@@ -327,6 +383,7 @@ static const JSCFunctionListEntry win32_window_proto_funcs[] = {
                          0),
     JS_CGETSET_MAGIC_DEF("X", win32_window_get_x, win32_window_set_x, 0),
     JS_CGETSET_MAGIC_DEF("Y", win32_window_get_y, win32_window_set_y, 0),
+    // JS_CFUNC_DEF("test", 0, test),
 };
 
 static JSClassDef win32_window_class = {
